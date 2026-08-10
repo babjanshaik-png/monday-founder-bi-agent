@@ -1,0 +1,319 @@
+<!doctype html>
+<html>
+  <head>
+    <title>University AI Chatbot</title>
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+  </head>
+
+  <body>
+    <div class="student-form" id="student-form">
+      <h2>Student Information</h2>
+      <p>Please enter your details before starting chat</p>
+
+      <input type="text" id="student-name" placeholder="Full Name" />
+      <input type="email" id="student-email" placeholder="Email Address" />
+      <input type="text" id="student-contact" placeholder="Contact Number" />
+      <input
+        type="text"
+        id="student-department"
+        placeholder="Department / Program"
+      />
+
+      <button onclick="startChat()">Start Chat</button>
+    </div>
+
+    <div class="chat-container" id="chat-container" style="display: none">
+      <div class="chat-header">
+        <h2>University AI Chatbot</h2>
+        <p>Smart student helpdesk assistant</p>
+        <button class="end-chat-btn" onclick="endChat()">End Chat</button>
+      </div>
+
+      <div id="chat-box">
+        <div class="bot-msg">
+          Hi! I am your University AI Assistant. Ask me anything about
+          admissions, exams, scholarships, or university rules.
+        </div>
+      </div>
+
+      <div class="personality-area">
+        <select id="personality">
+          <option value="general">General Assistant</option>
+          <option value="admission">Admission Assistant</option>
+          <option value="exam">Exam Assistant</option>
+          <option value="scholarship">Scholarship Assistant</option>
+          <option value="career">Career Guide</option>
+        </select>
+      </div>
+
+      <div class="input-area">
+        <button id="voice-btn" onclick="startVoice()">🎤</button>
+        <input type="text" id="user-input" placeholder="Ask your question..." />
+        <button id="send-btn" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+
+    <script>
+      let isResponding = false;
+      let endChatClicked = false;
+      let chatStarted = false;
+
+      function getTime() {
+        let now = new Date();
+        return (
+          now.getHours() + ":" + now.getMinutes().toString().padStart(2, "0")
+        );
+      }
+
+      function startChat() {
+        let name = document.getElementById("student-name").value.trim();
+        let email = document.getElementById("student-email").value.trim();
+        let contact = document.getElementById("student-contact").value.trim();
+        let department = document
+          .getElementById("student-department")
+          .value.trim();
+
+        if (!name || !email || !contact || !department) {
+          alert("Please fill all student details.");
+          return;
+        }
+
+        fetch("/save-student-info", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: name,
+            email: email,
+            contact: contact,
+            department: department,
+          }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              document.getElementById("student-form").style.display = "none";
+              document.getElementById("chat-container").style.display = "flex";
+            }
+          });
+      }
+
+      function endChat() {
+        endChatClicked = true;
+
+        fetch("/end-chat", {
+          method: "POST",
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            alert(data.message);
+
+            if (data.success) {
+              location.reload();
+            }
+          });
+      }
+
+      function setLoading(status) {
+        isResponding = status;
+
+        document.getElementById("user-input").disabled = status;
+        document.getElementById("send-btn").disabled = status;
+        document.getElementById("voice-btn").disabled = status;
+        document.getElementById("personality").disabled = status;
+      }
+
+      function speakBotResponse(text) {
+        if (!("speechSynthesis" in window)) {
+          alert("Text-to-speech is not supported in this browser.");
+          return;
+        }
+
+        window.speechSynthesis.cancel();
+
+        let cleanText = text.replace(/[*_`#>-]/g, "");
+
+        const speech = new SpeechSynthesisUtterance(cleanText);
+        speech.lang = "en-US";
+        speech.rate = 1;
+        speech.pitch = 1;
+        speech.volume = 1;
+
+        window.speechSynthesis.speak(speech);
+      }
+
+      function formatBotText(text) {
+        return text
+          .replace(/\*\*/g, "")
+          .replace(/\*/g, "")
+          .replace(/`/g, "")
+          .replace(/#/g, "")
+          .replace(/\n/g, "<br>")
+          .replace(/Title:/g, "<strong>Title:</strong>")
+          .replace(/Details:/g, "<br><strong>Details:</strong>")
+          .replace(/Next Step:/g, "<br><strong>Next Step:</strong>")
+          .replace(/- /g, "• ");
+      }
+
+      function typeBotMessage(text) {
+        let chatBox = document.getElementById("chat-box");
+        let botDiv = document.createElement("div");
+
+        botDiv.className = "bot-msg";
+        chatBox.appendChild(botDiv);
+
+        let messageText = document.createElement("div");
+        botDiv.appendChild(messageText);
+
+        let index = 0;
+
+        let typingInterval = setInterval(function () {
+          if (index < text.length) {
+            messageText.innerHTML = formatBotText(text.substring(0, index + 1));
+            index++;
+            chatBox.scrollTop = chatBox.scrollHeight;
+          } else {
+            clearInterval(typingInterval);
+
+            let actions = document.createElement("div");
+            actions.className = "message-actions";
+
+            let time = document.createElement("span");
+            time.className = "time";
+            time.textContent = getTime();
+
+            let speakBtn = document.createElement("button");
+            speakBtn.className = "speak-btn";
+            speakBtn.textContent = "🔊";
+            speakBtn.onclick = function () {
+              speakBotResponse(text);
+            };
+
+            actions.appendChild(time);
+            actions.appendChild(speakBtn);
+            botDiv.appendChild(actions);
+
+            setLoading(false);
+            document.getElementById("user-input").focus();
+          }
+        }, 2);
+      }
+
+      function sendMessage() {
+        if (isResponding) return;
+
+        let input = document.getElementById("user-input");
+        let message = input.value.trim();
+        let personality = document.getElementById("personality").value;
+
+        if (message === "") return;
+        chatStarted = true;
+
+        let chatBox = document.getElementById("chat-box");
+
+        chatBox.innerHTML += `
+        <div class="user-msg">
+          ${message}
+          <div class="time">${getTime()}</div>
+        </div>
+      `;
+
+        input.value = "";
+        input.placeholder = "Ask your question...";
+
+        setLoading(true);
+
+        let typingDiv = document.createElement("div");
+        typingDiv.className = "bot-msg typing";
+        typingDiv.innerHTML = "AI is thinking...";
+        typingDiv.id = "typing";
+
+        chatBox.appendChild(typingDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        fetch("/get-response", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: message,
+            personality: personality,
+          }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            document.getElementById("typing").remove();
+            typeBotMessage(data.response);
+          })
+          .catch(() => {
+            document.getElementById("typing").remove();
+            typeBotMessage("Something went wrong. Please try again.");
+          });
+      }
+
+      function startVoice() {
+        if (isResponding) return;
+
+        const SpeechRecognition =
+          window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        if (!SpeechRecognition) {
+          alert(
+            "Voice recognition is not supported in this browser. Please use Chrome.",
+          );
+          return;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = "en-US";
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        let input = document.getElementById("user-input");
+
+        recognition.start();
+
+        input.placeholder = "Listening... speak now";
+
+        recognition.onresult = function (event) {
+          const transcript = event.results[0][0].transcript;
+
+          input.value = transcript;
+          input.placeholder = "Edit your message or press Send";
+          input.focus();
+        };
+
+        recognition.onerror = function () {
+          input.placeholder = "Ask your question...";
+        };
+
+        recognition.onend = function () {
+          if (input.value.trim() === "") {
+            input.placeholder = "Ask your question...";
+          }
+        };
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        document
+          .getElementById("user-input")
+          .addEventListener("keypress", function (event) {
+            if (event.key === "Enter" && !isResponding) {
+              sendMessage();
+            }
+          });
+      });
+
+      window.addEventListener("beforeunload", function () {
+        if (!endChatClicked && chatStarted) {
+          navigator.sendBeacon("/end-chat");
+        }
+      });
+    </script>
+  </body>
+</html>
